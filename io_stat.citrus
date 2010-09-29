@@ -1,0 +1,167 @@
+grammar Whitespace
+  rule space  [ \t]* end
+  rule newline [\n\r]* end
+  rule eof [\004] end
+end
+
+grammar Number
+  include Whitespace
+
+  rule number
+    float | integer
+  end
+
+  rule float
+    (digits '.' digits) {
+      def value
+        text.to_f
+      end
+    }
+  end
+
+  rule integer
+    (digits) {
+      def value
+        text.strip.to_i
+      end
+    }
+  end
+
+  rule digits
+    [0-9]+ ('_' [0-9]+)*
+  end
+end
+
+grammar Word
+  include Whitespace
+  
+  rule word
+    ([A-z|%] ~[ \t\n\r]) {
+      def value
+        text
+      end
+    }
+  end
+end
+
+grammar List
+  include Number
+  include Word
+
+  rule list
+  	metrics | headings
+  end
+  
+  
+  rule metrics
+    (head:number tail:(space number)+) {
+	  def value
+        [head.value] + tail.matches.map do |x| x.number.value end
+      end
+    }
+  end
+
+  rule headings
+    (head:word tail:(space word)+) {
+		def value
+			[head.value] + tail.matches.map do |x| x.word.value end
+		end
+	}
+  end
+end
+
+grammar TimeGrammar
+  include Whitespace
+
+  rule time
+    ([0|1] [0-9] ':' [0-5] [0-9] ':' [0-5] [0-9] space [A|P] 'M') {
+	  def value
+	  	Time.parse(text)
+	  end
+    }
+  end	
+end
+
+grammar IoStat
+  include TimeGrammar
+  include List
+  include Whitespace
+  include Number
+
+  rule entry
+    platform_line | datapoint | cpu_datapoint | device_datapoint | device_metrics | eof
+  end
+
+  rule datapoint
+    ('Time:' space time newline cpu_datapoint newline newline device_datapoint newline? ) {
+      def time_value
+      	time.value
+      end
+
+      def cpu_headings
+      	cpu_datapoint.headings_value
+      end
+
+      def cpu_metrics
+      	cpu_datapoint.metrics_value
+      end
+
+      def device_headings
+      	device_datapoint.headings_value
+      end
+
+      def device_labels
+      	device_datapoint.devices_value
+      end
+
+      def device_metrics
+      	device_datapoint.metrics_value
+      end
+    }
+  end
+
+  rule cpu_datapoint
+    ('avg-cpu:' space headings newline space metrics) {
+      def headings_value
+      	headings.value
+      end
+
+      def metrics_value
+      	metrics.value
+      end
+    }
+  end
+
+  rule device_datapoint
+  	('Device:' space headings stats:(newline device_metrics)+ ) {
+      def headings_value
+      	headings.value
+      end
+
+      def devices_value
+      	stats.matches.map do |x| x.device_metrics.device end
+      end
+
+      def metrics_value
+      	stats.matches.map do |x| x.device_metrics.metrics end
+      end
+    }
+  end
+
+  rule device_metrics
+  	(device_match:word space metrics_match:metrics) {
+      def device
+      	device_match.value
+      end
+
+      def metrics
+      	metrics_match.value
+      end
+    }
+  end
+
+  rule platform_line
+  	platform:word .* ~[ \t\n\r] '(' hostname:(.+) ')' space date:([0-1] [0-9] '/' [0-3] [0-9] '/' integer)
+  end
+  
+end
